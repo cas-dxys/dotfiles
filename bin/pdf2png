@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Convert PDFs to PNG at 150 DPI beside the original.
+# Single-page: name.png. Multi-page: name_png/name-1.png etc.
+# Requires poppler-utils (pdftocairo, pdfinfo).
+set -uo pipefail
+
+replace=false
+if [[ "${1:-}" == "--replace" ]]; then
+    replace=true
+    shift
+fi
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: pdf2png [--replace] FILE..."
+    exit 2
+fi
+
+render() {
+    local f="$1" name="$2" pages="$3" tmp="$4"
+    if [[ "$pages" -eq 1 ]]; then
+        pdftocairo -png -r 150 -singlefile "$f" "$tmp/out"
+    else
+        mkdir "$tmp/out" && pdftocairo -png -r 150 "$f" "$tmp/out/$name"
+    fi
+}
+
+failed=0
+
+for f in "$@"; do
+    if [[ ! -f "$f" || "${f,,}" != *.pdf ]]; then
+        echo "Invalid PDF: $f"
+        failed=1
+        continue
+    fi
+
+    dir="$(dirname "$f")"
+    name="$(basename "${f%.*}")"
+    pages=$(pdfinfo "$f" 2>/dev/null | awk '/^Pages:/ {print $2}')
+
+    if [[ -z "$pages" ]]; then
+        echo "Error converting $f: could not read page count"
+        failed=1
+        continue
+    fi
+
+    if [[ "$pages" -eq 1 ]]; then
+        target="$dir/$name.png"
+        built_suffix=".png"
+    else
+        target="$dir/${name}_png"
+        built_suffix=""
+    fi
+
+    if [[ -e "$target" && "$replace" == false ]]; then
+        echo "Skipping (already exists): $target"
+        continue
+    fi
+
+    tmp=$(mktemp -d "$dir/.pdf2png-XXXXXX")
+
+    if render "$f" "$name" "$pages" "$tmp"; then
+        rm -rf "$target"
+        mv "$tmp/out$built_suffix" "$target"
+        echo "Converted: $target"
+    else
+        echo "Error converting $f"
+        failed=1
+    fi
+
+    rm -rf "$tmp"
+done
+
+exit "$failed"

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+result=$("$HOME/.local/bin/pdf2png" "$@" 2>&1)
+status=$?
+
+if [ "$status" -eq 0 ] && [[ "$result" == *"Converted:"* ]]; then
+    notify-send \
+        -a "PDF to PNG" \
+        -i image-x-generic \
+        "Conversion Complete" \
+        "Your PDF has been converted to PNG."
+
+elif [ "$status" -eq 0 ] && [[ "$result" == *"Skipping (already exists):"* ]]; then
+    notify-send \
+        -a "PDF to PNG" \
+        -i dialog-information \
+        "Already Converted" \
+        "The PNG output already exists. Nothing was overwritten."
+
+else
+    notify-send \
+        -a "PDF to PNG" \
+        -i dialog-warning \
+        "Conversion Issue" \
+        "One or more files could not be converted. Run pdf2png in the terminal for details."
+fi

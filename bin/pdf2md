@@ -1,0 +1,73 @@
+#!/home/cas/.venvs/pdf2md/bin/python
+
+import argparse
+import os
+import pathlib
+import sys
+import tempfile
+import pymupdf
+import pymupdf4llm
+
+parser = argparse.ArgumentParser(
+    description="Convert PDFs to MD files beside the original."
+)
+
+parser.add_argument(
+    "--replace",
+    action="store_true",
+    help="Replace an existing MD file."
+)
+
+parser.add_argument("files", nargs="+")
+
+args = parser.parse_args()
+
+
+def convert(filename):
+    pdf = pathlib.Path(filename).expanduser().resolve()
+
+    if not pdf.is_file() or pdf.suffix.lower() != ".pdf":
+        print(f"Invalid PDF: {pdf}")
+        return False
+
+    destination = pdf.with_suffix(".md")
+
+    if destination.exists() and not args.replace:
+        print(f"Skipping (already exists): {destination}")
+        return True
+
+    tmp_path = None
+
+    try:
+        with pymupdf.open(str(pdf)) as doc:
+            markdown = pymupdf4llm.to_markdown(doc)
+
+        # Write to a hidden temp file first, then swap it in,
+        # so a failed conversion never leaves a half-written .md.
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=pdf.parent,
+            prefix=".pdf2md-",
+            suffix=".md",
+            delete=False,
+        ) as tmp:
+            tmp.write(markdown)
+            tmp_path = pathlib.Path(tmp.name)
+
+        tmp_path.chmod(0o644)
+        os.replace(tmp_path, destination)
+
+        print(f"Converted: {destination}")
+        return True
+
+    except Exception as error:
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
+        print(f"Error converting {pdf}: {error}")
+        return False
+
+
+results = [convert(filename) for filename in args.files]
+
+sys.exit(0 if all(results) else 1)
